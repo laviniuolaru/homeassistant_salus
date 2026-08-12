@@ -6,9 +6,11 @@
 
 > **Note:** this is a personal fork of
 > [epoplavskis/homeassistant_salus](https://github.com/epoplavskis/homeassistant_salus).
-> The only change is that a gateway that is unreachable or not finished booting
-> now raises `ConfigEntryNotReady` instead of failing the setup outright, so
-> Home Assistant retries on its own. See [Changes in this fork](#changes-in-this-fork).
+> The only change is in how gateway errors are classified: a gateway that is
+> unreachable or still booting now raises `ConfigEntryNotReady` so Home
+> Assistant retries on its own, while a reply that cannot be decrypted - a
+> wrong EUID - raises `ConfigEntryError` and fails for good.
+> See [Changes in this fork](#changes-in-this-fork).
 
 # What This Is
 
@@ -33,6 +35,40 @@ To configure this integration, go to Home Assistant web interface Configuration 
 When you are done with configuration you should see your devices in Configuration -> Integrations -> Entities
 
 # Changes in this fork
+
+## 0.5.5 - tell "still booting" apart from "wrong EUID"
+
+0.5.4 retried on every error, which fixed the power-cut case but meant a
+genuinely wrong EUID would also be retried forever instead of being reported.
+Both cases can be separated exactly, so neither needs to be a compromise.
+
+`IT600AuthenticationError` is a misnomer. `pyit600` raises it from one place
+only, in `IT600Gateway.connect()`: the encrypted `POST /deviceid/read` failed
+with a timeout or a connection error, *and* a plain `GET /` on the same host
+still answered. The gateway's web server being up while its device API is not
+serving yet is what a gateway that has not finished booting looks like - so
+this is a transient condition, not a credentials problem.
+
+A wrong EUID never reaches that branch. Measured against a UGE600:
+
+| request | response | result |
+| --- | --- | --- |
+| correct EUID | HTTP 200, 19952 bytes, 64 ms | decrypts, `status: success` |
+| wrong EUID | HTTP 200, 32 bytes, 10 ms | `ValueError: Invalid padding bytes` |
+
+The gateway answers a request it cannot decrypt immediately, and the reply
+fails to decrypt on the way back. `pyit600` catches that in the bare
+`except Exception` of `_make_encrypted_request` and raises
+`IT600CommandError`, which this integration did not catch at all - it escaped
+as an unhandled traceback.
+
+So the three errors now map to the three outcomes Home Assistant provides:
+
+| pyit600 error | what it means | Home Assistant |
+| --- | --- | --- |
+| `IT600ConnectionError` | gateway unreachable | `ConfigEntryNotReady` - retry |
+| `IT600AuthenticationError` | web server up, device API not serving yet | `ConfigEntryNotReady` - retry |
+| `IT600CommandError` | reply will not decrypt, i.e. wrong EUID | `ConfigEntryError` - permanent |
 
 ## 0.5.4 - retry setup instead of giving up
 
