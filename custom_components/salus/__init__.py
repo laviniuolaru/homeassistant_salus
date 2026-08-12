@@ -4,6 +4,7 @@ import time
 from asyncio import sleep
 
 from homeassistant import config_entries, core
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
 from homeassistant.const import (
@@ -55,11 +56,19 @@ async def async_setup_gateway_entry(hass: core.HomeAssistant, entry: config_entr
                 else:
                     await sleep(3)
     except IT600ConnectionError as ce:
-        _LOGGER.error("Connection error: check if you have specified gateway's HOST correctly.")
-        return False
+        raise ConfigEntryNotReady(
+            f"Could not reach the iT600 gateway at {host}. "
+            "Check that the host is correct and the gateway is powered on."
+        ) from ce
     except IT600AuthenticationError as ae:
-        _LOGGER.error("Authentication error: check if you have specified gateway's EUID correctly.")
-        return False
+        # The gateway also answers with undecryptable data while it is still
+        # booting, which surfaces here as an authentication error. Retrying
+        # instead of failing lets the integration recover on its own after a
+        # power cut, when Home Assistant comes up before the gateway does.
+        raise ConfigEntryNotReady(
+            f"The iT600 gateway at {host} rejected the EUID. "
+            "If the EUID is correct, the gateway is probably still starting up."
+        ) from ae
 
     hass.data[DOMAIN][entry.entry_id] = gateway
 
