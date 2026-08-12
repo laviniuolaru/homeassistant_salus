@@ -78,15 +78,19 @@ that as a permanent setup failure: the entry is marked `setup_error` and is
 never retried, so the integration stays dead until it is reloaded by hand.
 
 That is the wrong outcome after a power cut. Home Assistant boots faster than
-the UGE600 gateway, which also has to bring up its Zigbee network. While it is
-still starting the gateway answers with data that cannot be decrypted, which
-`pyit600` surfaces as `IT600AuthenticationError` - so a perfectly correct EUID
-produced `Authentication error: check if you have specified gateway's EUID
-correctly.` and all entities went permanently unavailable.
+the UGE600 gateway, which also has to bring up its Zigbee network, and a
+gateway in that state is reported as `IT600AuthenticationError` - so a
+perfectly correct EUID produced `Authentication error: check if you have
+specified gateway's EUID correctly.` and all entities went permanently
+unavailable.
 
 Both error paths now raise `ConfigEntryNotReady`, which is the documented way
 for an integration to say "not yet". Home Assistant then retries with a
 backoff until the gateway answers, and the entry recovers unattended.
+
+(This release assumed `IT600AuthenticationError` could also mean a wrong EUID,
+and accepted retrying forever in that case as the cost. 0.5.5 above shows it
+cannot, and drops the tradeoff.)
 
 # Troubleshooting
 
