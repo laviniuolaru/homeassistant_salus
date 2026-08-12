@@ -4,6 +4,12 @@
 
 # HomeAssistant - Salus Controls iT600 Smart Home Custom Component
 
+> **Note:** this is a personal fork of
+> [epoplavskis/homeassistant_salus](https://github.com/epoplavskis/homeassistant_salus).
+> The only change is that a gateway that is unreachable or not finished booting
+> now raises `ConfigEntryNotReady` instead of failing the setup outright, so
+> Home Assistant retries on its own. See [Changes in this fork](#changes-in-this-fork).
+
 # What This Is
 
 This is a custom component to allows you to control and monitor your Salus iT600 smart home devices locally through Salus Controls UGE600 / UGE600 universal gateway.
@@ -25,6 +31,26 @@ Copy `custom_components` folder from this repository to `/config` of your Home A
 To configure this integration, go to Home Assistant web interface Configuration -> Integrations and then press "+" button and select "Salus iT600".
 
 When you are done with configuration you should see your devices in Configuration -> Integrations -> Entities
+
+# Changes in this fork
+
+## 0.5.4 - retry setup instead of giving up
+
+Upstream, a gateway that could not be reached or that rejected the EUID logged
+an error and returned `False` from `async_setup_entry`. Home Assistant treats
+that as a permanent setup failure: the entry is marked `setup_error` and is
+never retried, so the integration stays dead until it is reloaded by hand.
+
+That is the wrong outcome after a power cut. Home Assistant boots faster than
+the UGE600 gateway, which also has to bring up its Zigbee network. While it is
+still starting the gateway answers with data that cannot be decrypted, which
+`pyit600` surfaces as `IT600AuthenticationError` - so a perfectly correct EUID
+produced `Authentication error: check if you have specified gateway's EUID
+correctly.` and all entities went permanently unavailable.
+
+Both error paths now raise `ConfigEntryNotReady`, which is the documented way
+for an integration to say "not yet". Home Assistant then retries with a
+backoff until the gateway answers, and the entry recovers unattended.
 
 # Troubleshooting
 
